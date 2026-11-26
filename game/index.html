@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<!--
+  SENJA EXPRESS: Island Courier Run — game/index.html
+  ======================================================
+  File ini adalah satu-satunya dokumen HTML game. Tugasnya kecil tapi
+  menentukan: memuat import map Three.js dari file vendor lokal, menampung
+  kanvas WebGL, dan menyediakan kerangka DOM untuk HUD tiga kolom, layar
+  judul, layar hasil, serta pesan ramah bila WebGL tidak tersedia.
+
+  Keputusan desain yang sengaja diambil di sini (dan dijaga di semua file):
+  - NOL network saat game jalan: tidak ada <link> font eksternal, tidak ada
+    <script src> CDN, tidak ada fetch/XHR. Satu-satunya modul yang dimuat
+    adalah ./vendor/three.module.min.js lewat import map.
+  - NOL eval / new Function: semua logika hidup di modul ES di game/js/.
+  - HUD dibuat sebagai elemen DOM (bukan tekstur kanvas 3D) supaya teks
+    instrumen tajam di segala resolusi dan mudah diuji anti-tumpuk: setiap
+    panel punya bounding box tetap di style.css.
+  - Layar judul dan layar hasil adalah overlay DOM di atas kanvas, sehingga
+    screenshot deterministik (?shot=start / ?shot=end) bisa menangkapnya
+    tanpa perlu mensimulasikan input pengguna.
+  - Semua id DOM yang dipakai modul JS didaftarkan di sini secara eksplisit,
+    supaya hud.js dan ui.js tidak pernah menebak-nebak struktur halaman.
+
+  Karakter & dunia: pilot Raka, pesawat bush "Kutilang", Kepulauan Senja
+  (8 pulau) di golden hour. Judul pitch: "SENJA EXPRESS: Island Courier
+  Run — 8 Islands, 12 Rings, 3 Missions, 3 Difficulties, 2 Views,
+  1 Bush Plane at Golden Hour".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENJA EXPRESS — Island Courier Run</title>
+<link rel="stylesheet" href="./css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="game-root">
+  <canvas id="gl"></canvas>
+
+  <!-- Kompas strip atas -->
+  <div id="compass" class="hud-panel" aria-label="Compass">
+    <div id="compass-strip"></div>
+    <div id="compass-hdg">HDG 090&deg;</div>
+  </div>
+
+  <!-- Kolom kiri: panel misi -->
+  <section id="mission-panel" class="hud-panel" aria-label="Mission">
+    <h2 id="mission-name">RING RUN</h2>
+    <p id="mission-objective">Fly through 12 rings</p>
+    <div class="mission-row"><span>WAYPOINT</span><strong id="mission-waypoint">RING 1</strong></div>
+    <div class="mission-row"><span>DISTANCE</span><strong id="mission-distance">412 m</strong></div>
+    <div class="mission-row"><span>TIME</span><strong id="mission-timer">00:00</strong></div>
+    <div class="mission-row"><span id="mission-progress-label">RINGS</span><strong id="mission-progress">0 / 12</strong></div>
+    <div id="mission-bar-wrap"><div id="mission-bar"></div></div>
+  </section>
+
+  <!-- Kolom kanan: instrumen -->
+  <section id="instruments" class="hud-panel" aria-label="Instruments">
+    <div class="inst-row"><span>ALT</span><strong><span id="inst-alt">0</span> ft</strong></div>
+    <div class="inst-row"><span>SPD</span><strong><span id="inst-spd">0</span> kt</strong></div>
+    <div class="inst-row"><span>HDG</span><strong><span id="inst-hdg">090&deg;</span></strong></div>
+    <div class="inst-row"><span>VSI</span><strong><span id="inst-vsi">0</span> ft/min</strong></div>
+    <div class="inst-row"><span>SCORE</span><strong id="inst-score">0</strong></div>
+    <div class="gauge-label">THROTTLE</div>
+    <div class="gauge-bar"><div id="gauge-throttle"></div></div>
+    <div class="gauge-label">FUEL <span id="fuel-pct">100%</span></div>
+    <div class="gauge-bar"><div id="gauge-fuel"></div></div>
+    <div class="gauge-label">DAMAGE <span id="damage-pct">0%</span></div>
+    <div class="gauge-bar"><div id="gauge-damage"></div></div>
+  </section>
+
+  <!-- Tengah: artificial horizon + kalout -->
+  <div id="center-stack">
+    <div id="callout" aria-live="polite"></div>
+    <canvas id="horizon" width="220" height="220" aria-label="Artificial horizon"></canvas>
+    <div id="horizon-label">ATTITUDE</div>
+  </div>
+
+  <!-- Peringatan batas peta / stall / fuel -->
+  <div id="warning-banner"></div>
+
+  <!-- Hint kontrol bawah -->
+  <footer id="controls-hint">W/S throttle &nbsp;·&nbsp; Arrows pitch / roll &nbsp;·&nbsp; A/D rudder &nbsp;·&nbsp; SPACE drop crate &nbsp;·&nbsp; C view &nbsp;·&nbsp; P pause &nbsp;·&nbsp; R restart &nbsp;·&nbsp; M mute</footer>
+
+  <!-- Kokpit: gauge analog (hanya aktif di cockpit view) -->
+  <div id="cockpit" hidden>
+    <div class="cockpit-gauge"><canvas id="gauge-airspeed" width="150" height="150"></canvas><span>AIRSPEED</span></div>
+    <div class="cockpit-gauge"><canvas id="gauge-altimeter" width="150" height="150"></canvas><span>ALTIMETER</span></div>
+    <div class="cockpit-gauge"><canvas id="gauge-vsi" width="150" height="150"></canvas><span>VSI</span></div>
+    <div id="cockpit-throttle"><div id="cockpit-throttle-lever"></div><span>THR</span></div>
+    <div id="cockpit-frame"></div>
+  </div>
+
+  <!-- Layar judul -->
+  <div id="title-screen" class="screen" hidden>
+    <div class="screen-card">
+      <p class="eyebrow">GOLDEN HOUR &middot; KEPUALAUAN SENJA</p>
+      <h1>SENJA EXPRESS</h1>
+      <p class="subtitle">Island Courier Run &mdash; pilot Raka flies the bush plane &ldquo;Kutilang&rdquo;</p>
+      <p class="pitch">8 Islands &middot; 12 Rings &middot; 3 Missions &middot; 3 Difficulties &middot; 2 Views &middot; 1 Bush Plane at Golden Hour</p>
+      <div class="goal-box">
+        <p><strong>GOAL</strong> &mdash; Finish your mission before the fuel runs out.</p>
+        <p><strong>WIN</strong> &mdash; All rings cleared, all 3 landings made, or all 3 crates dropped.</p>
+        <p><strong>LOSE</strong> &mdash; Crash into terrain or water, or take 100% damage.</p>
+      </div>
+      <div class="select-row">
+        <label>MISSION
+          <select id="select-mission">
+            <option value="rings">RING RUN &mdash; 12 rings vs the clock</option>
+            <option value="hop">ISLAND HOP &mdash; land at 3 airstrips</option>
+            <option value="medic">MEDIC DROP &mdash; drop 3 crates to villages</option>
+          </select>
+        </label>
+        <label>DIFFICULTY
+          <select id="select-difficulty">
+            <option value="calm">CALM &mdash; no wind</option>
+            <option value="breeze">BREEZE &mdash; light wind</option>
+            <option value="gale">GALE &mdash; strong wind</option>
+          </select>
+        </label>
+      </div>
+      <button id="btn-fly" type="button">FLY &mdash; START MISSION</button>
+      <p class="controls-line">W/S throttle &middot; Arrows pitch/roll &middot; A/D rudder &middot; SPACE drop &middot; C view &middot; P pause &middot; R restart &middot; M mute &middot; Mouse drag steers, wheel = throttle</p>
+    </div>
+  </div>
+
+  <!-- Layar hasil -->
+  <div id="results-screen" class="screen" hidden>
+    <div class="screen-card">
+      <p class="eyebrow">FLIGHT LOG &middot; KEPUALAUAN SENJA</p>
+      <h1 id="results-title">MISSION COMPLETE</h1>
+      <p id="results-sub" class="subtitle">Raka brought the Kutilang home.</p>
+      <dl id="flight-log">
+        <div><dt>MISSION</dt><dd id="log-mission">RING RUN</dd></div>
+        <div><dt>RINGS</dt><dd id="log-rings">12 / 12</dd></div>
+        <div><dt>LANDINGS</dt><dd id="log-landings">0 / 3</dd></div>
+        <div><dt>CRATES</dt><dd id="log-crates">0 / 3</dd></div>
+        <div><dt>TIME</dt><dd id="log-time">00:00</dd></div>
+        <div><dt>FUEL LEFT</dt><dd id="log-fuel">62%</dd></div>
+        <div><dt>DAMAGE</dt><dd id="log-damage">0%</dd></div>
+        <div><dt>SCORE</dt><dd id="log-score">0</dd></div>
+      </dl>
+      <button id="btn-again" type="button">FLY AGAIN (R)</button>
+    </div>
+  </div>
+
+  <!-- Layar pesan ramah bila WebGL tidak tersedia -->
+  <div id="nogl-screen" class="screen" hidden>
+    <div class="screen-card">
+      <h1>SENJA EXPRESS needs WebGL</h1>
+      <p class="subtitle">Your browser could not start WebGL, so the islands cannot be drawn.
+      Please try a recent desktop browser with hardware acceleration enabled,
+      then reload this page. No data was lost &mdash; the flight waits for you.</p>
+    </div>
+  </div>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
