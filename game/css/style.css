@@ -1,0 +1,214 @@
+/*
+  SENJA EXPRESS: Island Courier Run — game/css/style.css
+  ========================================================
+  Satu-satunya stylesheet game. Tugasnya: membuat HUD tiga kolom tetap
+  terbaca sekilas di atas langit senja yang terang, di 1280x720 maupun
+  1920x1080, tanpa satu pun elemen bertumpuk.
+
+  Keputusan desain yang dijaga di sini:
+  - Font sistem sans-serif tebal saja (nol network, nol webfont). Angka
+    instrumen minimal 28px, label 13-15px, kalout minimal 44px.
+  - Kontras lewat panel gelap semi-transparan (rgba hitam 0.55) + teks
+    putih/kuning + outline hitam tipis pada teks yang duduk langsung di
+    atas langit/terrain. Panel tidak pernah transparan penuh.
+  - Setiap elemen HUD punya bounding box TETAP (position: fixed dengan
+    lebar/tinggi dan inset yang eksplisit). Tidak ada elemen yang
+    diposisikan relatif terhadap elemen lain yang bisa bergeser, supaya
+    anti-tumpuk bisa dicek sekali di 1280x720 dan berlaku di mana-mana.
+  - Tiga kolom: kiri panel MISI (lebar 264px), kanan panel INSTRUMEN
+    (lebar 264px), tengah kolom horizon + kalout (lebar 240px). Kompas
+    strip di atas tengah, hint kontrol di bawah tengah. Pesawat di tengah
+    frame tidak pernah tertutup panel mana pun.
+  - Layar judul/hasil memakai kartu gelap di tengah dengan lebar maksimum
+    720px, supaya tetap terbaca saat jendela kecil.
+  - Gauge bar memakai warna semantik: throttle oranye, fuel hijau yang
+    berubah merah di bawah 25%, damage merah. Warna bukan satu-satunya
+    penanda: selalu ada angka persen di samping label.
+  - Kokpit overlay hanya tampil di cockpit view (diatur lewat atribut
+    hidden oleh main.js); gauge analog digambar di <canvas> oleh hud.js.
+*/
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1030; }
+
+body {
+  font-family: "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+#game-root { position: fixed; inset: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---------- Panel HUD umum ---------- */
+.hud-panel {
+  position: fixed;
+  background: rgba(8, 8, 20, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  padding: 12px 14px;
+  backdrop-filter: blur(2px);
+  text-shadow: 0 1px 2px #000, 0 0 4px #000;
+  z-index: 5;
+}
+
+/* ---------- Kompas strip atas ---------- */
+#compass {
+  top: 10px; left: 50%; transform: translateX(-50%);
+  width: 460px; height: 46px; padding: 6px 12px 4px;
+  text-align: center; overflow: hidden;
+}
+#compass-strip {
+  font-size: 15px; font-weight: 700; letter-spacing: 4px; color: #ffe9a8;
+  white-space: nowrap; overflow: hidden; height: 20px;
+}
+#compass-hdg { font-size: 14px; font-weight: 800; color: #fff; letter-spacing: 2px; white-space: nowrap; }
+
+/* ---------- Kolom kiri: misi ---------- */
+#mission-panel { top: 66px; left: 12px; width: 264px; min-height: 210px; }
+#mission-panel h2 { font-size: 22px; letter-spacing: 2px; color: #ffb347; margin-bottom: 4px; }
+#mission-objective { font-size: 14px; line-height: 1.35; color: #fff; margin-bottom: 10px; }
+.mission-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  font-size: 13px; padding: 3px 0; border-top: 1px solid rgba(255,255,255,0.15);
+}
+.mission-row span { color: #cfd6ff; letter-spacing: 1px; font-weight: 600; flex-shrink: 0; white-space: nowrap; }
+.mission-row strong { font-size: 17px; color: #fff; max-width: 62%; text-align: right; white-space: nowrap; }
+#mission-bar-wrap { height: 10px; background: rgba(255,255,255,0.18); border-radius: 5px; margin-top: 8px; overflow: hidden; }
+#mission-bar { height: 100%; width: 0%; background: #ffb347; border-radius: 5px; transition: width 0.25s; }
+
+/* ---------- Kolom kanan: instrumen ---------- */
+#instruments { top: 66px; right: 12px; width: 264px; }
+.inst-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+.inst-row > span { font-size: 13px; letter-spacing: 1px; color: #cfd6ff; font-weight: 600; }
+.inst-row strong { font-size: 28px; font-weight: 800; color: #fff; line-height: 1.15; white-space: nowrap; }
+/* Nilai HDG (angka + derajat) harus satu baris: angka dan ° dalam satu span nowrap. */
+#inst-hdg { white-space: nowrap; }
+#inst-score { color: #ffd94d; font-size: 30px; }
+.gauge-label { font-size: 13px; letter-spacing: 1px; color: #cfd6ff; font-weight: 700; margin-top: 8px; }
+.gauge-label span { color: #fff; float: right; }
+.gauge-bar { height: 12px; background: rgba(255,255,255,0.18); border-radius: 6px; margin-top: 3px; overflow: hidden; }
+.gauge-bar > div { height: 100%; border-radius: 6px; transition: width 0.15s; }
+#gauge-throttle { width: 60%; background: #ff8c1a; }
+#gauge-fuel { width: 100%; background: #37d67a; }
+#gauge-fuel.low { background: #ff4040; }
+#gauge-damage { width: 0%; background: #ff4040; }
+
+/* ---------- Tengah: horizon + kalout ---------- */
+#center-stack {
+  position: fixed; left: 50%; bottom: 54px; transform: translateX(-50%);
+  width: 240px; text-align: center; z-index: 5; pointer-events: none;
+}
+#callout {
+  min-height: 52px; font-size: 44px; font-weight: 900; letter-spacing: 1px;
+  color: #ffd94d; text-shadow: 0 2px 0 #000, 0 0 12px rgba(0,0,0,0.9), 0 0 3px #000;
+  line-height: 1.05; margin-bottom: 6px;
+}
+#callout.small { font-size: 30px; }
+#horizon {
+  width: 150px; height: 150px; border-radius: 50%;
+  border: 3px solid rgba(255,255,255,0.85);
+  background: rgba(8, 8, 20, 0.55);
+  box-shadow: 0 0 0 4px rgba(0,0,0,0.35);
+}
+#horizon-label { font-size: 12px; letter-spacing: 3px; color: #fff; font-weight: 700; margin-top: 4px; text-shadow: 0 1px 2px #000; }
+
+/* ---------- Banner peringatan ---------- */
+#warning-banner {
+  position: fixed; top: 66px; left: 50%; transform: translateX(-50%);
+  min-width: 320px; text-align: center; z-index: 6; pointer-events: none;
+  font-size: 26px; font-weight: 900; letter-spacing: 2px; color: #ff5a5a;
+  text-shadow: 0 2px 0 #000, 0 0 10px rgba(0,0,0,0.9);
+  display: none;
+}
+#warning-banner.show { display: block; }
+#warning-banner.warn-amber { color: #ffd94d; }
+
+/* ---------- Hint kontrol bawah ---------- */
+#controls-hint {
+  position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+  font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #fff;
+  background: rgba(8, 8, 20, 0.55); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px; padding: 7px 14px; white-space: nowrap; z-index: 5;
+  text-shadow: 0 1px 2px #000;
+}
+
+/* ---------- Kokpit ---------- */
+#cockpit { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
+.cockpit-gauge {
+  position: absolute; bottom: 58px; width: 150px; text-align: center;
+}
+.cockpit-gauge:nth-of-type(1) { left: 24px; }
+.cockpit-gauge:nth-of-type(2) { left: 190px; }
+.cockpit-gauge:nth-of-type(3) { left: 356px; }
+.cockpit-gauge canvas { border-radius: 50%; background: rgba(10,10,22,0.72); border: 3px solid #d8d8d8; }
+.cockpit-gauge span { display: block; font-size: 12px; letter-spacing: 2px; font-weight: 700; margin-top: 3px; text-shadow: 0 1px 2px #000; }
+#cockpit-throttle {
+  position: absolute; right: 30px; bottom: 58px; width: 34px; height: 150px;
+  background: rgba(10,10,22,0.72); border: 2px solid #d8d8d8; border-radius: 8px;
+}
+#cockpit-throttle-lever {
+  position: absolute; left: 4px; right: 4px; height: 16px; bottom: 60%;
+  background: #ff8c1a; border-radius: 4px;
+}
+#cockpit-throttle span { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 2px; text-shadow: 0 1px 2px #000; }
+#cockpit-frame {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 210px;
+  background: linear-gradient(to top, rgba(20,14,10,0.92) 0%, rgba(20,14,10,0.55) 55%, rgba(20,14,10,0) 100%);
+  z-index: -1;
+}
+
+/* ---------- Layar judul / hasil / pesan ---------- */
+.screen {
+  position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 6, 28, 0.62); padding: 20px;
+}
+.screen[hidden] { display: none; }
+.screen-card {
+  width: 720px; max-width: 94vw; max-height: 94vh; overflow-y: auto;
+  background: rgba(8, 8, 20, 0.88); border: 1px solid rgba(255, 179, 71, 0.6);
+  border-radius: 14px; padding: 26px 32px; text-align: center;
+  box-shadow: 0 12px 60px rgba(0,0,0,0.6);
+}
+.eyebrow { font-size: 13px; letter-spacing: 4px; color: #ffb347; font-weight: 700; }
+.screen-card h1 { font-size: 52px; letter-spacing: 3px; color: #ffd94d; margin: 6px 0 4px; text-shadow: 0 2px 0 #000; }
+.subtitle { font-size: 17px; color: #fff; margin-bottom: 10px; }
+.pitch { font-size: 15px; color: #ffe9a8; font-weight: 600; margin-bottom: 14px; }
+.goal-box {
+  text-align: left; background: rgba(255,255,255,0.07); border-radius: 8px;
+  padding: 12px 16px; margin-bottom: 14px; font-size: 14.5px; line-height: 1.5;
+}
+.goal-box strong { color: #ffb347; }
+.select-row { display: flex; gap: 14px; margin-bottom: 16px; }
+.select-row label { flex: 1; text-align: left; font-size: 13px; letter-spacing: 2px; font-weight: 700; color: #cfd6ff; }
+.select-row select {
+  display: block; width: 100%; margin-top: 5px; padding: 10px; font-size: 15px;
+  background: #1c1c38; color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 8px;
+}
+.screen-card button {
+  font-size: 20px; font-weight: 900; letter-spacing: 2px; color: #1a1030;
+  background: #ffb347; border: none; border-radius: 10px; padding: 14px 34px; cursor: pointer;
+}
+.screen-card button:hover { background: #ffd94d; }
+.controls-line { font-size: 13px; color: #cfd6ff; margin-top: 14px; line-height: 1.5; }
+
+#flight-log { text-align: left; margin: 10px 0 18px; }
+#flight-log > div {
+  display: flex; justify-content: space-between; padding: 7px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.15); font-size: 16px;
+}
+#flight-log dt { letter-spacing: 2px; color: #cfd6ff; font-weight: 700; }
+#flight-log dd { font-weight: 800; font-size: 20px; }
+#log-score { color: #ffd94d; font-size: 26px; }
+
+@media (max-width: 900px) {
+  #mission-panel, #instruments { width: 210px; }
+  .inst-row strong { font-size: 22px; }
+  #callout { font-size: 34px; }
+  #compass { width: 340px; }
+  .screen-card h1 { font-size: 38px; }
+  .cockpit-gauge:nth-of-type(3) { display: none; }
+}
